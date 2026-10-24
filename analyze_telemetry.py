@@ -22,12 +22,14 @@ def summarize(entries):
     impacts = [entry for entry in entries if "!!HIT!!" in entry["impact"]]
     line_events = [entry for entry in entries if entry["lines"] != "00"]
     sensor_events = [entry for entry in entries if entry["sensors"] != "00000"]
+    positions = [entry.get("position", "NONE") for entry in entries]
 
     print(f"Mesaje: {len(entries)}")
     print(f"Durata: {entries[-1]['ts'] - entries[0]['ts']:.2f} s")
     print(f"Putere medie: {sum(power) / len(power):.1f}%")
     print(f"Putere maxima: {max(power)}%")
     print(f"Detectari adversar: {len(sensor_events)}")
+    print(f"Pozitii observate: {', '.join(sorted(set(positions)))}")
     print(f"Evenimente linie: {len(line_events)}")
     print(f"Impacturi: {len(impacts)}")
 

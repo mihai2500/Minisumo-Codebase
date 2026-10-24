@@ -48,6 +48,7 @@ state_t state = PATROL;
 int output = 0; 
 state_t state_PID = PATROL;
 int output_PID = 0;
+volatile enemy_position_t enemy_position = ENEMY_POSITION_NONE;
 
 uint8_t dist_center, dist_r90, dist_r, dist_l90, dist_l;
 #ifdef ROBOT_VECHI
@@ -146,8 +147,24 @@ void telemetry_task(void *pvParameters) {
         // Human-friendly terminal-style formatting with timestamp relative to START SIGNAL
         // Digital Sensors: S:10101 (Center, R90, R, L90, L) - 1 if object SEEN
         // Line Sensors: L:RL (Right, Left) - 1 if whitespace SEEN
+        const char *position_name = "NONE";
+        switch (enemy_position) {
+            case ENEMY_POSITION_CENTER: position_name = "CENTER"; break;
+            case ENEMY_POSITION_LEFT: position_name = "LEFT"; break;
+            case ENEMY_POSITION_RIGHT: position_name = "RIGHT"; break;
+            case ENEMY_POSITION_AMBIGUOUS: position_name = "AMBIGUOUS"; break;
+            default: break;
+        }
+
+        const char *state_name = (state_PID == LOCKED) ? "LOCKED" : NULL;
+        if (state_name == NULL) {
+            static char numeric_state[12];
+            snprintf(numeric_state, sizeof(numeric_state), "%d", state_PID);
+            state_name = numeric_state;
+        }
+
         snprintf(payload, sizeof(payload), 
-            "[%7.2f s] [M:%d W:%d] [S:%d%d%d%d%d L:%d%d] [State:%d] Pwr:%4d | Yaw:%6.1f | Ax:%5.1fG | Impact:%s\n", 
+            "[%7.2f s] [M:%d W:%d] [S:%d%d%d%d%d L:%d%d] [Pos:%s] [State:%s] Pwr:%4d | Yaw:%6.1f | Ax:%5.1fG | Impact:%s\n",
             (float)relative_ts / 1000.0f,
             mode,
             wing_mode,
@@ -157,7 +174,8 @@ void telemetry_task(void *pvParameters) {
             dist_l90,
             dist_l,
             line_right, line_left,
-            state_PID, 
+            position_name,
+            state_name,
             output_PID,
             g_imu_processed.yaw, 
             (float)(g_imu_processed.acc_x - g_imu_processed.acc_x_offset) / 2048.0f,
@@ -454,7 +472,7 @@ void motor_controller_callback(void *arg) {
                 int out_abs = abs(local_output);
                 int left_percent = clamp_percent_0_100((int)((float)out_abs * LEFT_MOTOR_MULTIPLIER));
                 int right_percent = clamp_percent_0_100((int)((float)out_abs * RIGHT_MOTOR_MULTIPLIER));
-                if (output < 0) {
+                if (local_output < 0) {
                     bdc_motor_reverse(motor1);
                     bdc_motor_forward(motor2);
                 } else {
@@ -468,10 +486,12 @@ void motor_controller_callback(void *arg) {
 
         case ARCHING:
         case ARCHING_VIPER:
+        case SEARCH_ARC:
             {
                 bdc_motor_forward(motor1);
                 bdc_motor_forward(motor2);
-                float ratio = (local_state == ARCHING) ? 0.68f : 0.55f;
+                float ratio = (local_state == ARCHING) ? 0.68f :
+                              ((local_state == ARCHING_VIPER) ? 0.55f : 0.85f);
                 int base = abs(local_output);
                 if (local_output > 0) { // Arc RIGHT
                     int left_percent = clamp_percent_0_100((int)((float)base * LEFT_MOTOR_MULTIPLIER));
@@ -501,6 +521,7 @@ void motor_controller_callback(void *arg) {
             break;
 
         case IDLE:
+        case LOCKED:
         default:
             bdc_motor_brake(motor1);
             bdc_motor_brake(motor2);
@@ -589,7 +610,8 @@ void run_strategy_task(void *arg) {
                 static int64_t last_movement_time = 0;
                 if (!g_imu_processed.robot_stalled) {
                     last_movement_time = esp_timer_get_time();
-                } else if (abs(output_PID) >= 80) { // Only check stall if we are actually trying to move fast
+                } else if (current_strategy != &strategy_edge_arc_search &&
+                           abs(output_PID) >= 80) { // Search rotation is intentionally stationary
                     int64_t stall_duration = (esp_timer_get_time() - last_movement_time) / 1000;
                     if (stall_duration >= STALL_POTENTIAL_MS) {
                         ESP_LOGW("Supervisor", "STALL DETECTED! Executing wiggle...");
@@ -762,7 +784,7 @@ static void mode_select_count() {
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
     if (press_count < 1) press_count = 1;
-    if (press_count > 10) press_count = 10;
+    if (press_count > 11) press_count = 11;
     mode = press_count;
     blink_led(mode, 150);
     gpio_set_level(ONBOARD_LED, 1);
@@ -854,6 +876,8 @@ void app_main(void) {
 
     switch (mode) {
         case 1: current_strategy = &strategy_hunter; initial_move_duration_ms = HUNTER_INITIAL_MOVE_DURATION_MS; break;
+        // case 1: current_strategy = &strategy_stationary_aim; initial_move_duration_ms = 0; break;
+        // case 1: current_strategy = &strategy_edge_arc_search; initial_move_duration_ms = 0; break;
         case 2: current_strategy = &strategy_bulldozer; initial_move_duration_ms = BULLDOZER_INITIAL_MOVE_DURATION_MS; break;
         case 3: current_strategy = &strategy_matador_right; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
         case 4: current_strategy = &strategy_matador_left; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
@@ -863,6 +887,7 @@ void app_main(void) {
         case 8: current_strategy = &strategy_dash_right; initial_move_duration_ms = 0; break;
         case 9: current_strategy = &strategy_viper; initial_move_duration_ms = 0; break;
         case 10: current_strategy = &strategy_test_90deg_turns; initial_move_duration_ms = 0; break;
+        case 11: current_strategy = &strategy_stationary_aim; initial_move_duration_ms = 0; break;
         default: current_strategy = &strategy_bulldozer; initial_move_duration_ms = BULLDOZER_INITIAL_MOVE_DURATION_MS; break;
     }
 

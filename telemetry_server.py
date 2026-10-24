@@ -31,7 +31,7 @@ def udp_listener():
         return
         
     print(f"UDP LISTENING ON {UDP_PORT}...")
-    pattern = re.compile(r"\[\s*(?P<ts>[\d\.]+)\s*s\].*?\[M:(?P<mode>\d+)\s+W:(?P<wing>\d+)\].*?\[S:(?P<s_bits>[01]{5})\s+L:(?P<l_bits>[01]{2})\].*?\[State:(?P<state>\d+)\].*?Pwr:\s*(?P<pwr>-?\d+).*?Yaw:\s*(?P<yaw>[\d\.-]+).*?Ax:\s*(?P<ax>[\d\.-]+)G.*?Impact:(?P<impact>.*)")
+    pattern = re.compile(r"\[\s*(?P<ts>[\d\.]+)\s*s\].*?\[M:(?P<mode>\d+)\s+W:(?P<wing>\d+)\].*?\[S:(?P<s_bits>[01]{5})\s+L:(?P<l_bits>[01]{2})\].*?\[Pos:(?P<position>[A-Z]+)\].*?\[State:(?P<state>\d+|LOCKED)\].*?Pwr:\s*(?P<pwr>-?\d+).*?Yaw:\s*(?P<yaw>[\d\.-]+).*?Ax:\s*(?P<ax>[\d\.-]+)G.*?Impact:(?P<impact>.*)")
     
     while True:
         try:
@@ -58,7 +58,8 @@ def udp_listener():
                     "wing": int(match.group('wing')),
                     "sensors": match.group('s_bits'),
                     "lines": match.group('l_bits'),
-                    "state": int(match.group('state')),
+                    "position": match.group('position'),
+                    "state": match.group('state'),
                     "pwr": int(match.group('pwr')),
                     "yaw": float(match.group('yaw')),
                     "ax": float(match.group('ax')),

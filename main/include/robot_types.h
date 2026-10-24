@@ -9,13 +9,23 @@ typedef enum {
     ATTACK, 
     FOUND,  
     IDLE,   
+    LOCKED,
     RETREAT, 
     ARCHING,  
     ARCHING_VIPER,
+    SEARCH_ARC,
     FOLLOW_LINE,
     PUSH_CONFIRM,
     REPOSITION
 } state_t;
+
+typedef enum {
+    ENEMY_POSITION_NONE = 0,
+    ENEMY_POSITION_CENTER,
+    ENEMY_POSITION_LEFT,
+    ENEMY_POSITION_RIGHT,
+    ENEMY_POSITION_AMBIGUOUS
+} enemy_position_t;
 
 typedef struct {
     int16_t acc_x, acc_y, acc_z;

@@ -41,6 +41,7 @@ extern bool initial_move_done;
 extern int initial_move_duration_ms;
 extern int64_t last_enemy_seen_time;
 extern volatile imu_data_t g_imu_processed;
+extern volatile enemy_position_t enemy_position;
 
 typedef void (*strategy_func_t)(void);
 extern strategy_func_t current_strategy;
@@ -51,6 +52,8 @@ void strategy_hunter(void);
 void strategy_matador_left(void);
 void strategy_matador_right(void);
 void strategy_calibration_turn(void);
+void strategy_stationary_aim(void);
+void strategy_edge_arc_search(void);
 void strategy_dash_left(void);
 void strategy_dash_right(void);
 void strategy_spiral_out(void);

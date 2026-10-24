@@ -113,7 +113,7 @@ void strategy_matador_left(void) {
 void strategy_matador_right(void) {
     if (!initial_move_done) {
         ESP_LOGI("MatadorR", "Executing parabolic evade (RIGHT)...");
-        state_PID = ARCHING;
+        state_PID = SEARCH_ARC;
         output_PID = ARCING_SPEED;
         return;
     }
@@ -184,6 +184,261 @@ void strategy_calibration_turn(void) {
         }
     } else {
         calibrating = 0;
+        state_PID = IDLE;
+        output_PID = 0;
+    }
+}
+
+static enemy_position_t detect_opponent_filtered(void) {
+    const bool left_seen = dist_l90 || dist_l;
+    const bool right_seen = dist_r90 || dist_r;
+
+    if (dist_l90 && dist_r90) {
+        return ENEMY_POSITION_CENTER;
+    }
+    if (dist_center && left_seen && right_seen) {
+        return ENEMY_POSITION_AMBIGUOUS;
+    }
+    if (left_seen && !right_seen) {
+        return ENEMY_POSITION_LEFT;
+    }
+    if (right_seen && !left_seen) {
+        return ENEMY_POSITION_RIGHT;
+    }
+    if (dist_center) {
+        return ENEMY_POSITION_CENTER;
+    }
+    return ENEMY_POSITION_NONE;
+}
+
+/*
+ * TODO pentru urmatoarea sesiune de test:
+ * - dupa LOCKED, treci controlat in ATTACK si impinge adversarul;
+ * - pastreaza ATTACK activ dupa LOCKED pentru testele fizice curente;
+ * - reactiveaza ulterior oprirea la impact doar dupa definirea unei detectii valide de contact;
+ * - valideaza comportamentul prin test fizic si log nou inainte de folosirea in meci.
+ */
+void strategy_stationary_aim(void) {
+    read_sensors();
+    const enemy_position_t observed_position = detect_opponent_filtered();
+    const bool left_seen = dist_l90 || dist_l;
+    const bool right_seen = dist_r90 || dist_r;
+    static bool right_tracking = false;
+    static bool right_center_phase = false;
+    static float right_center_start_yaw = 0.0f;
+    static int64_t right_center_start_time = 0;
+    static bool left_tracking = false;
+    static bool left_center_phase = false;
+    static float left_center_start_yaw = 0.0f;
+    static int64_t left_center_start_time = 0;
+    static int64_t right_last_seen_time = 0;
+    static int64_t left_last_seen_time = 0;
+    static int64_t center_stable_start_time = 0;
+    static bool target_locked = false;
+    static bool attack_active = false;
+    const int64_t now = esp_timer_get_time();
+    const int64_t RIGHT_LOST_HOLD_US = 180000;
+    const int64_t LEFT_LOST_HOLD_US = 90000;
+    const int64_t RIGHT_CENTER_MIN_TIME_US = 70000;
+    const float RIGHT_CENTER_MIN_DEGREES = 6.0f;
+    const int64_t LEFT_CENTER_MIN_TIME_US = 70000;
+    const float LEFT_CENTER_MIN_DEGREES = 6.0f;
+    const int64_t CENTER_STABLE_TIME_US = 100000;
+    static int last_turn_direction = 0;
+    enemy_position = observed_position;
+
+    if (attack_active) {
+        state_PID = ATTACK;
+        output_PID = 100;
+        return;
+    }
+
+    if (target_locked) {
+        target_locked = false;
+        attack_active = true;
+        state_PID = ATTACK;
+        output_PID = 100;
+        return;
+    }
+
+    if (dist_center) {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        target_locked = true;
+        state_PID = LOCKED;
+        output_PID = 0;
+        return;
+    }
+
+    if (dist_center && left_seen && !right_seen) {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = true;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        last_turn_direction = -1;
+        left_last_seen_time = now;
+        state_PID = FOUND;
+        output_PID = -65;
+    } else if (dist_center && right_seen && !left_seen) {
+        right_tracking = true;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        right_last_seen_time = now;
+        last_turn_direction = 1;
+        state_PID = FOUND;
+        output_PID = 65;
+    } else if (left_seen && right_seen) {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        state_PID = IDLE;
+        output_PID = 0;
+    } else if (dist_l) {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = true;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        last_turn_direction = -1;
+        left_last_seen_time = now;
+        state_PID = FOUND;
+        output_PID = -100;
+    } else if (dist_r) {
+        right_tracking = true;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        right_last_seen_time = now;
+        last_turn_direction = 1;
+        state_PID = FOUND;
+        output_PID = 100;
+    } else if (dist_l90) {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = true;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        last_turn_direction = -1;
+        left_last_seen_time = now;
+        state_PID = FOUND;
+        output_PID = -85;
+    } else if (dist_r90) {
+        right_tracking = true;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        right_last_seen_time = now;
+        last_turn_direction = 1;
+        state_PID = FOUND;
+        output_PID = 85;
+    } else if (right_tracking && dist_center && !left_seen && !right_seen) {
+        if (!right_center_phase) {
+            right_center_phase = true;
+            right_center_start_yaw = g_imu_processed.yaw;
+            right_center_start_time = now;
+        }
+
+        float right_yaw_delta = right_center_start_yaw - g_imu_processed.yaw;
+        if (right_yaw_delta < 0.0f) {
+            right_yaw_delta += 360.0f;
+        }
+
+        if ((now - right_center_start_time) < RIGHT_CENTER_MIN_TIME_US ||
+            right_yaw_delta < RIGHT_CENTER_MIN_DEGREES) {
+            state_PID = FOUND;
+            output_PID = 30;
+        } else {
+            right_tracking = false;
+            right_center_phase = false;
+            target_locked = true;
+            center_stable_start_time = now;
+            state_PID = LOCKED;
+            output_PID = 0;
+        }
+    } else if (left_tracking && dist_center && !left_seen && !right_seen) {
+        if (!left_center_phase) {
+            left_center_phase = true;
+            left_center_start_yaw = g_imu_processed.yaw;
+            left_center_start_time = now;
+        }
+
+        float left_yaw_delta = g_imu_processed.yaw - left_center_start_yaw;
+        if (left_yaw_delta < 0.0f) {
+            left_yaw_delta += 360.0f;
+        }
+
+        if ((now - left_center_start_time) < LEFT_CENTER_MIN_TIME_US ||
+            left_yaw_delta < LEFT_CENTER_MIN_DEGREES) {
+            state_PID = FOUND;
+            output_PID = -30;
+        } else {
+            left_tracking = false;
+            left_center_phase = false;
+            target_locked = true;
+            center_stable_start_time = now;
+            state_PID = LOCKED;
+            output_PID = 0;
+        }
+    } else if (right_tracking && !left_seen &&
+               now - right_last_seen_time < RIGHT_LOST_HOLD_US) {
+        state_PID = FOUND;
+        output_PID = 55;
+    } else if (last_turn_direction < 0 && !left_seen && !right_seen &&
+               now - left_last_seen_time < LEFT_LOST_HOLD_US) {
+        state_PID = FOUND;
+        output_PID = -35;
+    } else {
+        right_tracking = false;
+        right_center_phase = false;
+        left_tracking = false;
+        left_center_phase = false;
+        center_stable_start_time = 0;
+        state_PID = IDLE;
+        output_PID = 0;
+    }
+}
+
+void strategy_edge_arc_search(void) {
+    static int phase = 0;
+    static int64_t phase_start_time = 0;
+    const int64_t now = esp_timer_get_time();
+    const int64_t ARC_SEARCH_TIME_US = 1850000;
+
+    read_sensors();
+    if (dist_center || dist_l90 || dist_l || dist_r90 || dist_r) {
+        strategy_stationary_aim();
+        return;
+    }
+
+    if (phase == 0) {
+        phase_start_time = now;
+        phase = 1;
+    }
+
+    if (phase == 1) {
+        if (now - phase_start_time >= ARC_SEARCH_TIME_US) {
+            phase = 2;
+            state_PID = IDLE;
+            output_PID = 0;
+            return;
+        } else {
+            state_PID = ARCHING;
+            output_PID = -80;
+            return;
+        }
+    }
+
+    if (phase == 2) {
         state_PID = IDLE;
         output_PID = 0;
     }

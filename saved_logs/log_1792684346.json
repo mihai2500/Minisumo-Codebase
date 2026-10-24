@@ -1,0 +1,15 @@
+[
+  {
+    "ts": 0.0,
+    "mode": 0,
+    "wing": 0,
+    "sensors": "00000",
+    "lines": "00",
+    "position": "NONE",
+    "state": "0",
+    "pwr": 0,
+    "yaw": 0.0,
+    "ax": 0.0,
+    "impact": "SAFE"
+  }
+]

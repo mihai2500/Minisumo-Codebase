@@ -41,6 +41,10 @@
                         <div id="val-state" class="stat-value">0</div>
                     </div>
                     <div class="stat-item">
+                        <div class="stat-label">Opponent Position</div>
+                        <div id="val-position" class="stat-value">NONE</div>
+                    </div>
+                    <div class="stat-item">
                         <div class="stat-label">Power</div>
                         <div id="val-pwr" class="stat-value">0%</div>
                     </div>
@@ -189,6 +193,7 @@
             document.getElementById('val-ts').innerText = data.ts.toFixed(2) + 's';
             document.getElementById('val-mode').innerText = `M${data.mode} W${data.wing}`;
             document.getElementById('val-state').innerText = data.state;
+            document.getElementById('val-position').innerText = data.position || 'NONE';
             document.getElementById('val-pwr').innerText = data.pwr + '%';
             document.getElementById('val-sensors').innerText = data.sensors;
             document.getElementById('val-lines').innerText = data.lines;
@@ -196,7 +201,7 @@
             
             // LOG DATA FOR USER AS REQUESTED
             if (data.ts > 0) {
-                console.log(`[${data.ts}s] P:${data.pwr} Y:${data.yaw} A:${data.ax} I:${data.impact}`);
+                console.log(`[${data.ts}s] Pos:${data.position || 'NONE'} P:${data.pwr} Y:${data.yaw} A:${data.ax} I:${data.impact}`);
             }
 
             const impactEl = document.getElementById('val-impact');
