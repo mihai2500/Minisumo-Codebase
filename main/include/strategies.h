@@ -40,6 +40,7 @@ extern uint8_t line_right, line_left;
 extern bool was_retreated;
 extern bool turning_after_retreat;
 extern bool matador_arching_right;
+extern bool dash_arching_left;
 extern int enemy_seen_counter;
 extern bool hunter_turn_active;
 extern bool hunter_turn_waiting_for_clear;

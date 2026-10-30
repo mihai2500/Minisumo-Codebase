@@ -15,7 +15,8 @@ typedef enum {
     FOLLOW_LINE,
     PUSH_CONFIRM,
     REPOSITION,
-    PURE_TURN
+    PURE_TURN,
+    TURN_90ARC
 } state_t;
 
 typedef struct {

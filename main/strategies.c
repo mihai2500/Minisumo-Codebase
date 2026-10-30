@@ -450,6 +450,7 @@ void strategy_viper(void) {
 }
 
 void strategy_dash_left(void) {
+    dash_arching_left = true;
     if (initial_move_done) {
         state_PID = PATROL;
         output_PID = PATROL_SPEED;
@@ -457,14 +458,14 @@ void strategy_dash_left(void) {
     }
     static int stage = 0; 
     static int64_t stage_start = 0;
-    static float turn_start_angle_l = 0;
     const int pre_straight_ms = 150;
+    const int arc_ms = 220;
     const int post_straight_ms = 200;
 
     if (stage == 0) {
         stage = 1;
         stage_start = esp_timer_get_time();
-        ESP_LOGI("DashL", "Starting dash-left sequence");
+        ESP_LOGI("DashL", "Starting dash-left arc sequence");
     }
 
     int64_t elapsed = (esp_timer_get_time() - stage_start) / 1000;
@@ -472,53 +473,26 @@ void strategy_dash_left(void) {
     if (stage == 1) {
         state_PID = ATTACK;
         output_PID = 100;
-        turn_start_angle_l = g_imu_processed.yaw; // Keep updating until we jump to stage 2
         if (elapsed >= pre_straight_ms) {
             stage = 2;
             stage_start = esp_timer_get_time();
         }
     } else if (stage == 2) {
-        float relative_yaw = g_imu_processed.yaw - turn_start_angle_l;
-        float error = 90.0f - relative_yaw; // Target is +90.0 degrees
+
+        state_PID = TURN_90ARC;
+        output_PID = -100; 
         
-        static float integral = 0;
-        static float prev_error = 0;
-        integral += error;
-        float derivative = error - prev_error;
-        prev_error = error;
-        
-        float TURN_KP = 2.0f;
-        float TURN_KI = 0.01f;
-        float TURN_KD = 0.5f;
-        
-        float correction = (TURN_KP * error) + (TURN_KI * integral) + (TURN_KD * derivative);
-        
-        // Target is +90.0 degrees.
-        if ((fabs(error) < 5.0f && fabs(derivative) < 1.0f) || elapsed >= 500) { 
-            ESP_LOGI("DashL", "Turn complete at %.2f deg (rel: %.2f)", g_imu_processed.yaw, relative_yaw);
+        if (elapsed >= arc_ms) { 
+            ESP_LOGI("DashL", "Arc left complete.");
             stage = 3;
             stage_start = esp_timer_get_time();
-            integral = 0;
-            prev_error = 0;
-        } else {
-            int pwr = -correction; 
-            if (pwr < -100) pwr = -100;
-            if (pwr > 100) pwr = 100;
-            if (pwr < 0 && pwr > -35) pwr = -35; 
-            if (pwr > 0 && pwr < 35) pwr = 35;
-            
-            // Avoid the same turn as the enemy found turn
-            state_PID = PURE_TURN; 
-            output_PID = pwr;
-            output_PID = pwr; 
         }
     } else if (stage == 3) {
         state_PID = ATTACK;
         output_PID = 100;
         if (elapsed >= post_straight_ms) {
-            stage = 0; // Reset for next time
+            stage = 0; // Reset
             stage_start = 0;
-            turn_start_angle_l = 0;
             ESP_LOGI("DashL", "Dash-left complete. Switching to Hunter.");
             current_strategy = &strategy_hunter;
             initial_move_done = true;
@@ -527,6 +501,7 @@ void strategy_dash_left(void) {
 }
 
 void strategy_dash_right(void) {
+    dash_arching_left = false;
     if (initial_move_done) {
         state_PID = PATROL;
         output_PID = PATROL_SPEED;
@@ -534,14 +509,14 @@ void strategy_dash_right(void) {
     }
     static int stage = 0;
     static int64_t stage_start = 0;
-    static float turn_start_angle_r = 0;
     const int pre_straight_ms = 150;
+    const int arc_ms = 220;
     const int post_straight_ms = 175;
 
     if (stage == 0) {
         stage = 1;
         stage_start = esp_timer_get_time();
-        ESP_LOGI("DashR", "Starting dash-right sequence");
+        ESP_LOGI("DashR", "Starting dash-right arc sequence");
     }
 
     int64_t elapsed = (esp_timer_get_time() - stage_start) / 1000;
@@ -549,43 +524,18 @@ void strategy_dash_right(void) {
     if (stage == 1) {
         state_PID = ATTACK;
         output_PID = 100;
-        turn_start_angle_r = g_imu_processed.yaw; // Latch until jump
         if (elapsed >= pre_straight_ms) {
             stage = 2;
             stage_start = esp_timer_get_time();
         }
     } else if (stage == 2) {
-        float relative_yaw = g_imu_processed.yaw - turn_start_angle_r;
-        float error = -90.0f - relative_yaw; // Target is -90.0 degrees
+        state_PID = TURN_90ARC;
+        output_PID = 100; 
         
-        static float integral = 0;
-        static float prev_error = 0;
-        integral += error;
-        float derivative = error - prev_error;
-        prev_error = error;
-        
-        float TURN_KP = 2.0f;
-        float TURN_KI = 0.01f;
-        float TURN_KD = 0.5f;
-        
-        float correction = (TURN_KP * error) + (TURN_KI * integral) + (TURN_KD * derivative);
-        
-        // Target is -90.0 degrees.
-        if ((fabs(error) < 5.0f && fabs(derivative) < 1.0f) || elapsed >= 1500) { 
-            ESP_LOGI("DashR", "Turn complete at %.2f deg (rel: %.2f)", g_imu_processed.yaw, relative_yaw);
+        if (elapsed >= arc_ms) { 
+            ESP_LOGI("DashR", "Arc right complete.");
             stage = 3;
             stage_start = esp_timer_get_time();
-            integral = 0;
-            prev_error = 0;
-        } else {
-            int pwr = -correction; 
-            if (pwr < -100) pwr = -100;
-            if (pwr > 100) pwr = 100;
-            if (pwr < 0 && pwr > -35) pwr = -35; 
-            if (pwr > 0 && pwr < 35) pwr = 35;
-            
-            state_PID = FOUND;
-            output_PID = pwr; 
         }
     } else if (stage == 3) {
         state_PID = ATTACK;
@@ -593,7 +543,6 @@ void strategy_dash_right(void) {
         if (elapsed >= post_straight_ms) {
             stage = 0; // Reset
             stage_start = 0;
-            turn_start_angle_r = 0;
             ESP_LOGI("DashR", "Dash-right complete. Switching to Hunter.");
             current_strategy = &strategy_hunter;
             initial_move_done = true;
