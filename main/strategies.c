@@ -227,75 +227,106 @@ void strategy_matador_right(void) {
 //     }
 // }
 
-    void strategy_calibration_turn(void) {
-        bool is_enemy_present = (dist_center || dist_l90 || dist_l || dist_r90 || dist_r
-        #ifdef ROBOT_VECHI
-        #ifdef USE_LATERAL_SENSORS
-            || dist_rf || dist_lf
-        #endif
-        #endif
-        );
+void strategy_calibration_turn(void) {
+    bool is_enemy_present = (dist_center || dist_l90 || dist_l || dist_r90 || dist_r
+#ifdef ROBOT_VECHI
+#ifdef USE_LATERAL_SENSORS
+        || dist_rf || dist_lf
+#endif
+#endif
+    );
 
-        if (is_enemy_present) {
-            if (enemy_seen_counter < ENEMY_CONFIRMATION_THRESHOLD) {
-                enemy_seen_counter++;
-            }
-        } 
-        static int missed_frames = 0;
-        if (!is_enemy_present) {
-            if (++missed_frames >= 3) {
-                if (enemy_seen_counter > 0) enemy_seen_counter--;
-                missed_frames = 0;
-            }
-        } else {
+    if (is_enemy_present) {
+        if (enemy_seen_counter < ENEMY_CONFIRMATION_THRESHOLD) {
+            enemy_seen_counter++;
+        }
+    } 
+
+    static int missed_frames = 0;
+    if (!is_enemy_present) {
+        if (++missed_frames >= 3) {
+            if (enemy_seen_counter > 0) enemy_seen_counter--;
             missed_frames = 0;
         }
+    } else {
+        missed_frames = 0;
+    }
 
-        // Smoothing the commands
+    static float scan_center_yaw = 0.0f;
+    static bool scan_initialized = false;
+    static int sweep_dir = 1; // 1 = left, -1 = right
+    static bool direction_changed = false;
+
+    if (enemy_seen_counter >= ENEMY_CONFIRMATION_THRESHOLD) {
+        scan_initialized = false;
+
         static float smoothed_output = 0.0f;
         float target_output = 0.0f;
 
-        if (enemy_seen_counter >= ENEMY_CONFIRMATION_THRESHOLD) {
-            float error = 0.0;
+        float error = 0.0;
+        if (dist_center)       { error = 0.0; }
+        else if (dist_l90)     { error = -2.0;}
+        else if (dist_l)       { error = -1.0;}
+        else if (dist_r90)     { error = 2.0; }
+        else if (dist_r)       { error = 1.0; }
+#ifdef ROBOT_VECHI
+#ifdef USE_LATERAL_SENSORS
+        else if (dist_lf)      { error = -0.5;}
+        else if (dist_rf)      { error = 0.5; }
+#endif
+#endif
         
-            if (dist_center)       { error = 0.0; }
-            else if (dist_l90)     { error = -2.0;}
-            else if (dist_l)       { error = -1.0;}
-            else if (dist_r90)     { error = 2.0; }
-            else if (dist_r)       { error = 1.0; }
-            #ifdef ROBOT_VECHI
-            #ifdef USE_LATERAL_SENSORS
-            else if (dist_lf)      { error = -0.5;}
-            else if (dist_rf)      { error = 0.5; }
-            #endif
-            #endif
-            
-            if (error == 0.0) {
-                
-                state_PID = ATTACK;
-                output_PID = 100;
-                smoothed_output = 0.0f; 
-            } else {
-                state_PID = FOUND;
-                int turn_speed = (int)(Kp * fabs(error));
-                if (turn_speed < MIN_TURN_SPEED) turn_speed = MIN_TURN_SPEED;
-                if (turn_speed > MAX_TURN_SPEED) turn_speed = MAX_TURN_SPEED;
-                target_output = (error < 0) ? -turn_speed : turn_speed;
-            }
+        if (error == 0.0) {
+            state_PID = ATTACK;
+            output_PID = 100;
+            smoothed_output = 0.0f; 
         } else {
-            state_PID = IDLE;
-            output_PID = 0;
-            target_output = 0.0f;
-            smoothed_output = 0.0f;
+            state_PID = FOUND;
+            int turn_speed = (int)(Kp * fabs(error));
+            if (turn_speed < MIN_TURN_SPEED) turn_speed = MIN_TURN_SPEED;
+            if (turn_speed > MAX_TURN_SPEED) turn_speed = MAX_TURN_SPEED;
+            target_output = (error < 0) ? -turn_speed : turn_speed;
         }
 
         if (state_PID == FOUND) {
             float smoothing_factor = 0.4f; 
             smoothed_output = (smoothing_factor * target_output) + ((1.0f - smoothing_factor) * smoothed_output);
             output_PID = (int)smoothed_output;
-        } else if (state_PID != ATTACK) {
-            output_PID = (int)target_output;
         }
+        return; 
+    }
+
+    // Keeps turning
+    if (!scan_initialized) {
+        scan_center_yaw = g_imu_processed.yaw;
+        scan_initialized = true;
+        sweep_dir = 1; 
+        direction_changed = true; // Triggers PID reset in main.c via brief IDLE
+    }
+
+    float relative_yaw = g_imu_processed.yaw - scan_center_yaw;
+
+    // Switching direction
+    if (sweep_dir == 1 && relative_yaw >= 60.0f) {
+        sweep_dir = -1;
+        direction_changed = true;
+    } else if (sweep_dir == -1 && relative_yaw <= -60.0f) {
+        sweep_dir = 1;
+        direction_changed = true;
+    }
+
+    // Short idle step to clear PID
+    if (direction_changed) {
+        direction_changed = false;
+        state_PID = IDLE;
+        output_PID = 0;
+        return;
+    }
+
+    const int SCAN_SPEED = 40; 
+
+    state_PID = PURE_TURN; 
+    output_PID = (sweep_dir == 1) ? -SCAN_SPEED : SCAN_SPEED;
 }
 
 

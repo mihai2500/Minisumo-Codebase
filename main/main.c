@@ -498,8 +498,22 @@ void read_sensors() {
 
 void motor_controller_callback(void *arg) {
     #ifdef USE_START_STOP_MODULE
-    if (!gpio_get_level(START_STOP_MODULE)) {
+    static bool was_stopped_by_module = false; // Memorează dacă a avut loc o comandă de stop
+
+    if (gpio_get_level(START_STOP_MODULE)) {
+        // If the robot was stopped and is now starting again, reset the strategy to Hunter
+        if (!is_running && was_stopped_by_module) {
+            current_strategy = &strategy_hunter;
+            initial_move_duration_ms = HUNTER_INITIAL_MOVE_DURATION_MS;
+            initial_move_done = false;
+            
+            g_imu_processed.yaw = 0.0f; 
+            was_stopped_by_module = false; // Resetăm starea
+        }
+        is_running = true;
+    } else {
         is_running = false;
+        was_stopped_by_module = true;
     }
     #endif
 
@@ -1252,19 +1266,19 @@ void app_main(void) {
     else servo_set_angle(85);
 
     switch (mode) {
-        case 1: current_strategy = &strategy_hunter; initial_move_duration_ms = HUNTER_INITIAL_MOVE_DURATION_MS; break;
-        case 2: current_strategy = &strategy_bulldozer; initial_move_duration_ms = BULLDOZER_INITIAL_MOVE_DURATION_MS; break;
-        case 3: current_strategy = &strategy_matador_right; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
-        case 4: current_strategy = &strategy_matador_left; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
-        case 5: current_strategy = &strategy_staggered_burst; initial_move_duration_ms = 0; break;
-        case 6: current_strategy = &strategy_calibration_turn; initial_move_duration_ms = 0; break;
-        case 7: current_strategy = &strategy_dash_left; initial_move_duration_ms = 0; break;
-        case 8: current_strategy = &strategy_dash_right; initial_move_duration_ms = 0; break;
-        case 9: current_strategy = &strategy_viper; initial_move_duration_ms = 0; break;
-        case 10: current_strategy = &strategy_test_90deg_turns; initial_move_duration_ms = 0; break;
-        case 11: current_strategy = &strategy_test_straight; initial_move_duration_ms = 0; break; // <--- NEW
-        case 12: current_strategy = &strategy_test_turn; initial_move_duration_ms = 0; break;     // <--- NEW
-        case 13: current_strategy = &strategy_test_forward_180; initial_move_duration_ms = 0; break; // <--- NEW MODE 13
+        case 1: current_strategy = &strategy_matador_left; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
+        case 2: current_strategy = &strategy_matador_right; initial_move_duration_ms = MATADOR_INITIAL_MOVE_DURATION_MS; break;
+        case 3: current_strategy = &strategy_hunter; initial_move_duration_ms = HUNTER_INITIAL_MOVE_DURATION_MS; break;
+        case 4: current_strategy = &strategy_dash_left; initial_move_duration_ms = 0; break;
+        case 5: current_strategy = &strategy_dash_right; initial_move_duration_ms = 0; break;
+        case 6: current_strategy = &strategy_bulldozer; initial_move_duration_ms = BULLDOZER_INITIAL_MOVE_DURATION_MS; break;
+        case 7: current_strategy = &strategy_staggered_burst; initial_move_duration_ms = 0; break;
+        case 8: current_strategy = &strategy_calibration_turn; initial_move_duration_ms = 0; break;
+        case 9: current_strategy = &strategy_test_90deg_turns; initial_move_duration_ms = 0; break;
+        // case 9: current_strategy = &strategy_viper; initial_move_duration_ms = 0; break;
+        // case 11: current_strategy = &strategy_test_straight; initial_move_duration_ms = 0; break; // <--- NEW
+        // case 12: current_strategy = &strategy_test_turn; initial_move_duration_ms = 0; break;     // <--- NEW
+        // case 13: current_strategy = &strategy_test_forward_180; initial_move_duration_ms = 0; break; // <--- NEW MODE 13
         default: current_strategy = &strategy_bulldozer; initial_move_duration_ms = BULLDOZER_INITIAL_MOVE_DURATION_MS; break;
     }
 
